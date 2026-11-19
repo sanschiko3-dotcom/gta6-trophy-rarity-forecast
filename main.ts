@@ -24,7 +24,7 @@ function forecast(c){
  const drift=.85*m.drift+.15*median(peers);
  const delta=Math.max(-3,Math.min(3,drift*2*(1-Math.exp(-d/2))));
  const center=logit(m.r)+delta;
- const sigma=Math.sqrt(.012+.14*d);
+ const sigma=Math.sqrt(.018+.14*d);
  // Stale short histories conceal refreshes: uncertainty grows below the median.
  const tail=span<.25&&d>=.25?Math.min(4,d*5):0;
  return {id:c.trophies[i].id,q:[-1.645,-.674,0,.674,1.645].map(z=>z===1.645&&m.r===100?100:+inv(center+z*sigma+(z<0?z*tail:0)).toFixed(4))};
