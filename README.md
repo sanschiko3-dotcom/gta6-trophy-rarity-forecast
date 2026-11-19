@@ -19,4 +19,4 @@ MAKEFUN_INPUT_DIR=/absolute/kit/input MAKEFUN_OUTPUT_DIR=/tmp/trophy-output node
 node "$PWD/tools/validate.mjs" /absolute/kit
 ```
 
-See [validation results](tools/VALIDATION.md) for losses, coverage and runtime.
+The live backtest scored 0.279669 versus 1.369894 for persistence. The 4.5-day synthetic test scored 0.128750 versus 0.358744. Both forecast intervals covered 55 of 55 observed rates. Both practice cases produced byte-identical outputs across two runs, with each run taking under 1.3 seconds locally. See [validation results](tools/VALIDATION.md).
