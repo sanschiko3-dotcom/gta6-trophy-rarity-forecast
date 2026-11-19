@@ -8,9 +8,9 @@
 
 The entry predicts five quantiles for the percentage of Exophase players who will have earned each PS5 trophy at the case target.
 
-It fits a line to each trophy's logit rates, weighting recent reads more heavily. It shrinks the slope toward zero and the trophy's tier median, then damps and caps the projected change.
+The model fits separate trends for log earners and log tracked players, weighting recent reads more heavily. It shrinks each trend toward zero and its trophy tier median, then projects the ratio of the counts. Faster player growth lowers the projected earn rate.
 
-Population growth moderates positive drift for rare trophies. A short, stalled population series allows for dilution when the tracker refreshes. The quantiles reflect residual volatility, forecast horizon and uncertainty about a refresh.
+A stalled tracker can shift the median only when both the horizon and the observed history span at least six hours. The intervals widen with horizon and residual volatility. For shorter stalled histories, horizons of at least six hours allow extra uncertainty on the lower side without shifting the median.
 
 Use Node 22 with native TypeScript support or newer. Pass the absolute kit path to the validator.
 
@@ -19,4 +19,4 @@ MAKEFUN_INPUT_DIR=/absolute/kit/input MAKEFUN_OUTPUT_DIR=/tmp/trophy-output node
 node "$PWD/tools/validate.mjs" /absolute/kit
 ```
 
-The live backtest scored 0.279669 versus 1.369894 for persistence. The 4.5-day synthetic test scored 0.128750 versus 0.358744. Both forecast intervals covered 55 of 55 observed rates. Both practice cases produced byte-identical outputs across two runs, with each run taking under 1.3 seconds locally. See [validation results](tools/VALIDATION.md).
+With last-read rates as truth, each practice case scored 0.033341 versus 0.024854 for the kit starter. The fresh live backtest scored 1.026067 versus 2.367636, and the synthetic 4.5-day case scored 0.185033 versus 0.358744. The model covered 55 of 55 rates in each case, and all 55 synthetic medians moved in the expected direction. Every case produced byte-identical outputs across two runs, each under 2.9 seconds. These cases informed tuning. See [validation results](tools/VALIDATION.md).

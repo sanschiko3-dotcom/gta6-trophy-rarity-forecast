@@ -1,21 +1,22 @@
-# Validation
+# v2 validation
 
-Run the validator with Node and the absolute kit directory. It executes the kit's TypeScript starter for the persistence comparison. Loss uses all 275 quantile predictions per case.
+Run `node tools/validate.mjs /absolute/path/to/kit` with Node v24.22.1.
+The backtests informed tuning and are in-sample. They do not establish independent calibration.
 
-| Backtest | Forecast loss | Persistence loss | Forecast 90% coverage | Persistence 90% coverage |
-|---|---:|---:|---:|---:|
-| Live, 9 h 48 min | 0.279669 | 1.369894 | 55/55 | 0/55 |
-| Synthetic, 4.5 days | 0.128750 | 0.358744 | 55/55 | 55/55 |
+| Case | v2 pinball loss | Starter loss | v2 90% coverage | Starter 90% coverage | Output bytes | v2 runs (ms) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Practice p00 | 0.033341 | 0.024854 | 55/55 (1.0000) | 54/55 (0.9818) | 2639 | 2597.6, 1584.8 |
+| Practice p01 | 0.033341 | 0.024854 | 55/55 (1.0000) | 54/55 (0.9818) | 2639 | 1596.3, 1502.3 |
+| Fresh live | 1.026067 | 2.367636 | 55/55 (1.0000) | 3/55 (0.0545) | 2679 | 1825.9, 1307.6 |
+| Synthetic 4.5-day | 0.185033 | 0.358744 | 55/55 (1.0000) | 55/55 (1.0000) | 2832 | 2882.7, 1563.1 |
 
-The live fixture is the supplied 12:48 UTC Exophase read on November 19, aligned to p01 by the verified source order. Its horizon starts at the 03:00 UTC history read. The synthetic case has two days of ten minute reads and fivefold population growth during history. All 55 synthetic medians moved in the prescribed direction.
+Practice truth is the last read. Medians match it after clipping to the scoring bounds.
+The live backtest uses p01 history ending near 03:00 UTC and the supplied 15:03 UTC fixture on 2026-11-19, about 12 hours and 3 minutes apart. All 55 synthetic medians moved in the prescribed direction.
 
-The first version scored 0.381661 live and 0.146633 synthetic with full coverage. Narrowing the intervals improved synthetic loss to 0.124943 and reduced coverage to 45/55. Live loss rose to 0.401748 with coverage of 32/55. The final version allows more dilution after a stalled read and restores some interval width. Both cases informed tuning, so these results measure fit to the tests and do not establish independent calibration.
+Each case had 55 matching IDs and five finite, non-decreasing quantiles per row in [0, 100]. Each output was below 65,536 bytes, byte-identical across the two runs, and produced within the 8-second limit.
 
-| Case | Output bytes | Run 1 | Run 2 |
-|---|---:|---:|---:|
-| p00 | 2744 | 850.1 ms | 983.2 ms |
-| p01 | 2807 | 1292.5 ms | 1198.5 ms |
-| Live | 2774 | 1371.9 ms | 1017.1 ms |
-| Synthetic | 2840 | 1506.5 ms | 1863.0 ms |
+The first pass scored 1.062530 live with 55/55 coverage. Increasing the short-history lower-tail scale from 7.0 to 7.5 lowered live loss by 0.036463 at the same coverage, with practice and synthetic scores unchanged. The live history was too short to trigger a median refresh. The lower tail allows dilution risk on horizons of at least six hours even when the median gate is closed.
 
-All four cases passed the format checks and produced byte-identical output across both runs using plain Node v24.22.1.
+The separate 1.25× lower and 0.85× upper multipliers for an active median refresh were dropped. At a fixed short-history scale of 7.5, toggling these multipliers changed live and synthetic losses by 0.000000 and covered counts by 0, because neither case activated the median refresh. The backtests therefore supply no evidence for those multipliers.
+
+Using residual volatility from log earners gave synthetic loss of 0.185033 versus 0.189779 with logit-rate residuals. Coverage was 55/55 for both. Practice and live metrics were identical, so v2 uses log-earner residuals.

@@ -112,9 +112,9 @@ function forecast(data: Case) {
     // A stalled short sample cannot locate a refresh, but a longer forecast
     // needs room for a denominator jump without moving its median.
     const shortHistoryRisk = days >= 0.25 && population.span < 0.25
-      ? 7.0 * rarity * stalled * Math.sqrt(days) : 0;
-    const sigmaLo = Math.hypot(sigma * (refresh > 0 ? 1.25 : 1), shortHistoryRisk);
-    const sigmaHi = sigma * (refresh > 0 ? 0.85 : 1);
+      ? 7.5 * rarity * stalled * Math.sqrt(days) : 0;
+    const sigmaLo = Math.hypot(sigma, shortHistoryRisk);
+    const sigmaHi = sigma;
     const q = zScores.map(z => Number((100 / (1 + Math.exp(
       -(center + z * (z < 0 ? sigmaLo : sigmaHi))))).toFixed(4)));
     if (rate === 0) q[0] = 0;
