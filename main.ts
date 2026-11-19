@@ -78,7 +78,7 @@ function forecast(data: Case) {
     const refresh = stalled * rarity * 1.6 * -Math.expm1(-days / 0.22);
     const center = last + (rate === 100 ? 0 : clamp(drift * days / (1 + days / 2) - refresh, -3, 3));
     const edge = clamp((Math.abs(last) - 3) / 6, 0, 1);
-    const sigma = Math.hypot(0.23 + 0.06 * edge, (0.15 + noise) * Math.sqrt(days), 0.72 * refresh);
+    const sigma = Math.hypot(0.20 + 0.06 * edge, (0.07 + noise) * Math.sqrt(days), 0.49 * refresh);
     const q = zScores.map(z => Number((100 / (1 + Math.exp(-(center + z * sigma)))).toFixed(4)));
     if (rate === 0) q[0] = 0;
     if (rate === 100) q[4] = 100;
