@@ -10,7 +10,7 @@ import { synthetic } from './synthetic.mjs';
 
 assert(process.argv[2], 'Pass the kit directory as the first argument');
 const kit = resolve(process.argv[2]);
-const main = fileURLToPath(new URL('../main.ts', import.meta.url));
+const main = process.argv[3] ? resolve(process.argv[3]) : fileURLToPath(new URL('../main.ts', import.meta.url));
 const read = path => JSON.parse(readFileSync(path, 'utf8'));
 const temporary = mkdtempSync(join(tmpdir(), 'trophy-forecast-'));
 const input = join(temporary, 'input');
@@ -51,7 +51,7 @@ async function check(data) {
   }
 }
 
-async function backtest(data, answer, directions = false) {
+async function backtest(data, answer, mode) {
   const forecast = await check(data);
   writeFileSync(join(input, data.id + '.in'), JSON.stringify(data));
   try {
@@ -59,8 +59,15 @@ async function backtest(data, answer, directions = false) {
     const model = score(data.trophies, forecast, answer);
     const persistence = score(data.trophies, baseline, answer);
     console.log(data.id, { model, persistence });
-    assert(model.loss < persistence.loss);
-    if (directions) {
+    if (mode === 'practice') {
+      assert(model.loss <= 0.10);
+      assert.equal(model.covered, 55);
+      assert.deepEqual(forecast.trophies.map(({ q }) => q[2]), answer.map(rate => Math.max(0.01, Math.min(99.99, rate))));
+    } else {
+      assert(model.loss < persistence.loss);
+      assert(model.covered >= 44);
+    }
+    if (mode === 'synthetic') {
       const previous = data.history.at(-1).rates;
       const matches = forecast.trophies.filter(({ q }, i) =>
         Math.sign(q[2] - previous[i]) === Math.sign(answer[i] - previous[i])).length;
@@ -74,15 +81,15 @@ async function backtest(data, answer, directions = false) {
 
 try {
   const practice = ['p00', 'p01'].map(id => read(join(kit, 'input', id + '.in')));
-  for (const data of practice) await check(data);
-  const fixture = read(new URL('./live-rates-2026-11-19.json', import.meta.url));
+  for (const data of practice) await backtest(data, data.history.at(-1).rates, 'practice');
+  const fixture = read(new URL('./live-rates-2026-11-19-1503.json', import.meta.url));
   const source = practice[1];
   assert(source.trophies.every(({ id, description }, i) => id === i + 1 && description.length));
   const at = source.history.at(-1).at;
-  const minutes = (Date.parse(fixture.at) - Date.parse(at)) / 60_000;
-  await backtest({ ...source, id: 'live', at, target: fixture.at, horizon_minutes: minutes }, fixture.rates);
+  const minutes = (Date.parse(fixture.fetched_at) - Date.parse(at)) / 60_000;
+  await backtest({ ...source, id: 'live', at, target: fixture.fetched_at, horizon_minutes: minutes }, fixture.rates);
   const test = synthetic(source);
-  await backtest(test.input, test.answer, true);
+  await backtest(test.input, test.answer, 'synthetic');
 } finally {
   rmSync(temporary, { recursive: true, force: true });
 }

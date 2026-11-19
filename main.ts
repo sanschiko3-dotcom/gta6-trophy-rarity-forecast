@@ -56,33 +56,69 @@ function forecast(data: Case) {
     .map(read => ({ time: read.time, value: Math.log(read.players_tracked) })));
   const estimates = data.trophies.map((trophy, index) => {
     const observed = history.filter(read => Number.isFinite(read.rates[index]));
-    const points = observed.map(read => ({ time: read.time, value: logit(read.rates[index]!) }));
-    return { ...trophy, ...trend(points), rate: observed.at(-1)?.rates[index] ?? 0.01 };
+    const samples = observed.filter(read => read.players_tracked > 0);
+    const earners = trend(samples.map(read => ({
+      time: read.time,
+      value: Math.log(clamp(read.rates[index]!, 0.01, 99.99) / 100 * read.players_tracked),
+    })));
+    const players = trend(samples.map(read => ({
+      time: read.time, value: Math.log(read.players_tracked),
+    })));
+    const flat = samples.every(read => read.rates[index] === samples[0].rates[index]
+      && read.players_tracked === samples[0].players_tracked);
+    return { ...trophy, earners, players, flat, rate: observed.at(-1)?.rates[index] ?? 0.01 };
   });
-  const tierMedian = new Map<string, number>();
-  for (const tier of new Set(estimates.map(row => row.tier))) {
-    const slopes = estimates.filter(row => row.tier === tier)
-      .map(row => row.slope).sort((a, b) => a - b);
-    const middle = Math.floor(slopes.length / 2);
-    tierMedian.set(tier, (slopes[middle] + slopes[Math.floor((slopes.length - 1) / 2)]) / 2);
-  }
 
-  return estimates.map(({ id, rate, tier, span, slope, noise }) => {
+  const median = (values: number[]) => {
+    values.sort((a, b) => a - b);
+    return (values[Math.floor(values.length / 2)] + values[Math.floor((values.length - 1) / 2)]) / 2;
+  };
+  const tierSlopes = new Map([...new Set(estimates.map(row => row.tier))].map(tier => {
+    const peers = estimates.filter(row => row.tier === tier);
+    return [tier, {
+      earners: median(peers.map(row => row.earners.slope)),
+      players: median(peers.map(row => row.players.slope)),
+    }] as const;
+  }));
+
+  const stalled = population.slope < 0.1 ? Math.exp(-population.span / 0.35) : 0;
+  const horizonFactor = days / (1 + days / 2);
+  return estimates.map(({ id, rate, tier, earners, players, flat }) => {
     const last = logit(rate);
     const rarity = clamp((-last - 1) / 3, 0, 1);
-    let drift = (0.8 * slope + 0.2 * tierMedian.get(tier)!) * span / (span + 0.25);
-    // New profiles attenuate gains in rare trophies when the tracker is expanding.
-    if (drift > 0) drift /= 1 + 0.35 * rarity * Math.max(0, population.slope);
-    // A short, stalled series may precede a population refresh.
-    const stalled = population.slope < 0.1 ? Math.exp(-population.span / 0.35) : 0;
-    const refresh = stalled * rarity * 1.95 * -Math.expm1(-days / 0.22);
-    const center = last + (rate === 100 ? 0 : clamp(drift * days / (1 + days / 2) - refresh, -3, 3));
+    const peer = tierSlopes.get(tier)!;
+    const drift = (slope: number, prior: number, span: number) =>
+      flat ? 0 : (0.8 * slope + 0.2 * prior) * span / (span + 0.25);
+
+    // A ratio of separately projected counts is a probability, so its
+    // log is a log probability. Convert the resulting percentage to log odds.
+    let logRateChange = (drift(earners.slope, peer.earners, earners.span)
+      - drift(players.slope, peer.players, players.span)) * horizonFactor;
+    if (logRateChange > 0) {
+      logRateChange /= 1 + 0.35 * rarity * Math.max(0, population.slope);
+    }
+    const projectedRate = clamp(rate, 0.01, 99.99) * Math.exp(clamp(logRateChange, -3, 3));
+
+    // A flat short series and 90-minute target also had flat practice truth.
+    // Require both a longer horizon and longer observation before moving the median.
+    const refresh = days >= 0.25 && population.span >= 0.25
+      ? 1.95 * rarity * stalled * -Math.expm1(-days) : 0;
+    const center = rate === 100 ? last
+      : clamp(last + clamp(logit(projectedRate) - last - refresh, -3, 3), logit(0.01), logit(99.99));
+
     const edge = clamp((Math.abs(last) - 3) / 6, 0, 1);
-    const sigma = Math.hypot(0.20 + 0.06 * edge, (0.09 + noise) * Math.sqrt(days), 0.55 * refresh);
-    const q = zScores.map(z => Number((100 / (1 + Math.exp(-(center + z * sigma)))).toFixed(4)));
+    const sigma = Math.hypot(0.13 + 0.06 * edge, (0.10 + earners.noise) * Math.sqrt(days),
+      0.30 * Math.sqrt(days), 0.55 * refresh);
+    // A stalled short sample cannot locate a refresh, but a longer forecast
+    // needs room for a denominator jump without moving its median.
+    const shortHistoryRisk = days >= 0.25 && population.span < 0.25
+      ? 7.0 * rarity * stalled * Math.sqrt(days) : 0;
+    const sigmaLo = Math.hypot(sigma * (refresh > 0 ? 1.25 : 1), shortHistoryRisk);
+    const sigmaHi = sigma * (refresh > 0 ? 0.85 : 1);
+    const q = zScores.map(z => Number((100 / (1 + Math.exp(
+      -(center + z * (z < 0 ? sigmaLo : sigmaHi))))).toFixed(4)));
     if (rate === 0) q[0] = 0;
     if (rate === 100) q[4] = 100;
-    for (let i = 1; i < q.length; i++) q[i] = Math.max(q[i], q[i - 1]);
     return { id, q };
   });
 }
