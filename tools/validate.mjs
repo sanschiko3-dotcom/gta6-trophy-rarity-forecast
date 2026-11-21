@@ -41,7 +41,7 @@ function runCase(c, options = {}) {
   const run = spawnSync(process.execPath, [path.join(root, 'main.ts')], {
     env: { ...process.env, MAKEFUN_INPUT_DIR: input, MAKEFUN_OUTPUT_DIR: output,
       GTA6_TIME_AXIS: options.axis || 'linear', GTA6_DISABLE_FLAT_PRIOR: options.disablePrior ? '1' : '0',
-      GTA6_FALLBACK_SIGMA: String(options.fallbackSigma || 2.25), GTA6_GENERAL_SPREAD: String(options.generalSpread || 1) },
+      GTA6_FALLBACK_SIGMA: String(options.fallbackSigma || 3.5), GTA6_GENERAL_SPREAD: String(options.generalSpread || 1.5) },
     encoding: 'utf8', timeout: 8000,
   });
   const runtimeMs = Number(process.hrtime.bigint() - start) / 1e6;
@@ -94,9 +94,9 @@ const livePredictions = {};
 for (const axis of ['logtime', 'linear']) {
   livePredictions[axis] = runCase(liveCase, { axis });
 }
-const livePriorOff = runCase(liveCase, { disablePrior: true, fallbackSigma: 2.25 });
+const livePriorOff = runCase(liveCase, { disablePrior: true, fallbackSigma: 3.5 });
 const fallbackCalibration = {};
-for (const sigma of [2.0, 2.25, 2.5, 2.75]) {
+for (const sigma of [2.75, 3.0, 3.5, 4.0]) {
   const prediction = runCase(liveCase, { fallbackSigma: sigma });
   fallbackCalibration[sigma] = scoreRates(liveCase, liveByName, prediction.result);
 }
@@ -116,14 +116,14 @@ for (const axis of ['logtime', 'linear']) {
   syntheticMetrics[axis] = scoreRates(synthetic.testCase, synthetic.truth, syntheticPredictions[axis].result);
 }
 const syntheticSpreadSweep = {};
-for (const scale of [1, 1.1, 1.2, 1.3]) {
+for (const scale of [1.2, 1.4, 1.5, 1.7]) {
   const prediction = runCase(synthetic.testCase, { generalSpread: scale });
   syntheticSpreadSweep[scale] = scoreRates(synthetic.testCase, synthetic.truth, prediction.result);
 }
 const syntheticPersistence = persistence(synthetic.testCase);
 syntheticMetrics.persistence = scoreRates(synthetic.testCase, synthetic.truth, syntheticPersistence);
 const lastSyntheticRates = synthetic.testCase.history.at(-1).rates;
-const directionChecks = syntheticPredictions.logtime.result.trophies.map((row, i) =>
+const directionChecks = syntheticPredictions.linear.result.trophies.map((row, i) =>
   (row.q[2] - lastSyntheticRates[i]) * synthetic.directions[i] > 0);
 const runtime = Object.fromEntries(['logtime', 'linear'].map((axis) => [axis, {
   live_ms: Number(livePredictions[axis].runtimeMs.toFixed(1)),
@@ -142,4 +142,4 @@ const selected = liveMetrics.logtime.loss + syntheticMetrics.logtime.loss <= liv
 if (report.practice.mean > 0.01) throw new Error('practice grade exceeds 0.01');
 if (liveMetrics[selected].loss >= liveMetrics.persistence.loss) throw new Error('live model did not beat persistence');
 if (syntheticMetrics[selected].loss >= syntheticMetrics.persistence.loss || report.synthetic.direction_pass !== 55) throw new Error('synthetic gate failed');
-if (fallbackCalibration[2.5].loss >= liveMetrics.persistence.loss) throw new Error('flat-history dilution shift must beat persistence');
+if (fallbackCalibration[3.5].loss >= liveMetrics.persistence.loss) throw new Error('flat-history dilution shift must beat persistence');

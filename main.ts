@@ -55,12 +55,14 @@ function predictFromCounts(c, index, mode) {
     if (rate == null || !Number.isFinite(rate) || row.players_tracked <= 0) return [];
     const hours = (Date.parse(row.at) - anchor) / 3600000;
     const earners = Math.max(0.0001, clamp(rate, 0.01, 99.99) * row.players_tracked / 100);
-    return [{ hours, earnerLog: Math.log(earners), playerLog: Math.log(row.players_tracked) }];
+    return [{ hours, rateLogit: logit(rate), earnerLog: Math.log(earners), playerLog: Math.log(row.players_tracked) }];
   });
-  if (valid.length < 2) return { delta: 0, residual: 0 };
+  if (valid.length < 2) return { delta: 0, residualDown: 0, residualUp: 0, populationSlope: 0 };
   const last = valid.at(-1);
   const targetHours = (Date.parse(c.target) - anchor) / 3600000;
   const axis = mode === 'logtime' ? (h) => Math.log1p(Math.max(0, h)) : (h) => h / 24;
+  // Estimate earners and tracked population independently. Their ratio is the
+  // forecast rate, which exposes dilution when new early-game players arrive.
   const earner = weightedFit(valid.map((p) => ({ hours: p.hours, value: p.earnerLog })), axis, last.hours);
   const player = weightedFit(valid.map((p) => ({ hours: p.hours, value: p.playerLog })), axis, last.hours);
   const futureX = axis(targetHours);
@@ -69,14 +71,29 @@ function predictFromCounts(c, index, mode) {
   const projectedRate = clamp(100 * predictedEarners / predictedPlayers, 0.01, 99.99);
   const currentRate = c.history.at(-1).rates[index];
   const delta = logit(projectedRate) - logit(currentRate);
-  let residual = 0, total = 0;
+  let downSquares = 0, upSquares = 0, downWeight = 0, upWeight = 0;
   for (const p of valid) {
     const w = Math.exp(-Math.LN2 * Math.max(0, last.hours - p.hours) / 12);
-    const actual = logit(100 * Math.exp(p.earnerLog) / Math.exp(p.playerLog));
-    const fitted = logit(clamp(100 * Math.exp(earner.intercept + earner.slope * axis(p.hours) - player.intercept - player.slope * axis(p.hours)), 0.01, 99.99));
-    residual += w * (actual - fitted) ** 2; total += w;
+    const fittedEarners = Math.exp(clamp(earner.intercept + earner.slope * axis(p.hours), -20, 25));
+    const fittedPlayers = Math.exp(clamp(player.intercept + player.slope * axis(p.hours), 0, 30));
+    const fittedRate = clamp(100 * fittedEarners / fittedPlayers, 0.01, 99.99);
+    const error = p.rateLogit - logit(fittedRate);
+    if (error < 0) {
+      downSquares += w * error * error;
+      downWeight += w;
+    } else {
+      upSquares += w * error * error;
+      upWeight += w;
+    }
   }
-  return { delta, residual: Math.sqrt(residual / Math.max(total, 1e-9)) };
+  // Separate residual tails let a lopsided history widen only the side it
+  // supports; a zero-error side has no extra volatility beyond the horizon floor.
+  return {
+    delta,
+    residualDown: Math.sqrt(downSquares / Math.max(downWeight, 1e-9)),
+    residualUp: Math.sqrt(upSquares / Math.max(upWeight, 1e-9)),
+    populationSlope: player.slope,
+  };
 }
 
 function forecast(c) {
@@ -103,18 +120,24 @@ function forecast(c) {
   const rows = c.trophies.map((t, i) => {
     const lastLogit = logit(last.rates[i]);
     let delta = 0.8 * logDeltas[i] + 0.2 * (tierDeltas.get(t.tier) || 0);
+    const growthRatio = Math.max(0, last.players_tracked / c.history[0].players_tracked - 1);
+    const rarity = clamp((-lastLogit - 1) / 3, 0, 1);
+    // Fast tracker growth mostly adds early players, so damp rare-trophy gains.
+    if (delta > 0 && growthRatio > 0) delta *= 1 - 0.12 * Math.log1p(growthRatio) * rarity;
     // A flat long-horizon history has no slope to estimate. A -0.7 logit
     // refresh prior is retained only when the 2.18-day fixture beats persistence.
     const flatFallback = flat && days > 0.25;
     if (flatFallback) delta = 0;
     delta = clamp(delta * days / (days + 2), -3, 3);
     const medianLogit = lastLogit + delta + (flatFallback && process.env.GTA6_DISABLE_FLAT_PRIOR !== '1' ? -0.7 : 0);
-    const residual = selected[i].residual;
-    const fallbackScale = Number(process.env.GTA6_FALLBACK_SIGMA || 2.25);
-    const generalScale = Number(process.env.GTA6_GENERAL_SPREAD || 1);
-    const sigma = flatFallback ? fallbackScale : generalScale * Math.sqrt(0.30 ** 2 + (0.18 + residual) ** 2 * days);
-    const lowerSigma = sigma * (days > 1.5 ? 1.35 : 1.05);
-    const upperSigma = sigma * (days > 1.5 ? (flatFallback ? 1.20 : 0.90) : 1.05);
+    const residualDown = selected[i].residualDown;
+    const residualUp = selected[i].residualUp;
+    const fallbackScale = Number(process.env.GTA6_FALLBACK_SIGMA || 3.5);
+    const generalScale = Number(process.env.GTA6_GENERAL_SPREAD || 1.5);
+    const lowerSigma = flatFallback ? fallbackScale * 1.35 :
+      generalScale * Math.sqrt(0.30 ** 2 + (0.18 + residualDown) ** 2 * days) * (days > 1.5 ? 1.35 : 1.05);
+    const upperSigma = flatFallback ? fallbackScale * 1.20 :
+      generalScale * Math.sqrt(0.30 ** 2 + (0.18 + residualUp) ** 2 * days) * (days > 1.5 ? 0.90 : 1.05);
     const q = z.map((v) => round4(inverse(medianLogit + v * (v < 0 ? lowerSigma : upperSigma))));
     for (let j = 1; j < q.length; j++) q[j] = Math.max(q[j], q[j - 1]);
     return { id: t.id, q };
