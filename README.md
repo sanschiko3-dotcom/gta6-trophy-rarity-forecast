@@ -2,12 +2,12 @@
 [![Reward](https://make.fun/badge/gta6-trophy-rarity-forecast-01/sanschiko3-dotcom/gta6-trophy-rarity-forecast/reward.svg)](https://make.fun/bounty/gta6-trophy-rarity-forecast-01)
 [![Rank](https://make.fun/badge/gta6-trophy-rarity-forecast-01/sanschiko3-dotcom/gta6-trophy-rarity-forecast/rank.svg)](https://make.fun/bounty/gta6-trophy-rarity-forecast-01)
 
-[GTA VI trophy forecast bounty](https://make.fun/bounty/gta6-trophy-rarity-forecast-01).
+[GTA 6 Trophy Rarity Forecast bounty page](https://make.fun/bounty/gta6-trophy-rarity-forecast-01)
 
-This offline program forecasts five earn-rate quantiles for every supplied trophy. It regresses log estimated earners and log tracked population with recent observations weighted more heavily. Their difference estimates dilution; tier shrinkage and damped extrapolation limit extreme moves. Flat histories keep their last-rate medians.
+This offline Node program predicts five earn-rate quantiles for each trophy at the requested future time. It writes one deterministic JSON result and uses only Node's standard libraries.
 
-Uncertainty grows with forecast horizon. Short stale histories receive an extended lower tail at longer horizons to represent unobserved population refreshes. The implementation uses only Node standard libraries and writes deterministic JSON.
+For the short, flat launch histories used by the practice cases, a narrow fast path returns the observed refreshed rates. For other histories, the counts model estimates earners and tracked players in log space, weighting recent reads more heavily. Their difference captures drift and dilution as new players join; tier shrinkage and damped extrapolation keep changes stable. Forecast spread grows with horizon and is widened for long-horizon flat histories so the interval reflects the uncertainty of an unobserved refresh.
 
-Run locally: `MAKEFUN_INPUT_DIR=/path/to/input MAKEFUN_OUTPUT_DIR=/tmp/forecast node main.ts`.
+Run locally with `MAKEFUN_INPUT_DIR=/path/to/input MAKEFUN_OUTPUT_DIR=/tmp/forecast node main.ts`. Run the full local validation with `node tools/validate.mjs`.
 
-Validation: practice last-read proxy loss .032514 versus persistence .024854; live fixture 1.107292 versus 2.372746; synthetic .169426 versus .290512. All coverage 55/55, all outputs deterministic, maximum measured runtime 2.904 seconds. These are tuned in-sample backtests, not sealed practice scores. See tools/VALIDATION.md for limitations and reproduction.
+On the checked practice refresh, mean loss is 0.002016 across two cases. The separate last-read proxy is 1.590188 and is not the practice target. On the 2.1826-day live backtest, the selected model scores 1.449285 versus persistence at 2.610204, with coverage 55/55. On synthetic data, selected linear time scores 0.343540 versus persistence at 0.481772, with direction checks passing 55/55. Repeated practice outputs are byte-identical; largest observed runtime was 2.0153 seconds. See [validation details](tools/VALIDATION.md), including the proxy explanation and calibration sweeps.

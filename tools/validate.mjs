@@ -41,7 +41,7 @@ function runCase(c, options = {}) {
   const run = spawnSync(process.execPath, [path.join(root, 'main.ts')], {
     env: { ...process.env, MAKEFUN_INPUT_DIR: input, MAKEFUN_OUTPUT_DIR: output,
       GTA6_TIME_AXIS: options.axis || 'linear', GTA6_DISABLE_FLAT_PRIOR: options.disablePrior ? '1' : '0',
-      GTA6_FALLBACK_SIGMA: String(options.fallbackSigma || 3.5), GTA6_GENERAL_SPREAD: String(options.generalSpread || 1.5) },
+      GTA6_FALLBACK_SIGMA: String(options.fallbackSigma || 4.0), GTA6_GENERAL_SPREAD: String(options.generalSpread || 1.5) },
     encoding: 'utf8', timeout: 8000,
   });
   const runtimeMs = Number(process.hrtime.bigint() - start) / 1e6;
@@ -130,15 +130,16 @@ const runtime = Object.fromEntries(['logtime', 'linear'].map((axis) => [axis, {
   synthetic_ms: Number(syntheticPredictions[axis].runtimeMs.toFixed(1)),
 }]));
 
+const selected = liveMetrics.logtime.loss + syntheticMetrics.logtime.loss <= liveMetrics.linear.loss + syntheticMetrics.linear.loss ? 'logtime' : 'linear';
 const report = {
   practice: { per_case: practiceScores, mean: Number((practiceScores.reduce((a, b) => a + b, 0) / practiceScores.length).toFixed(6)), format, last_read_proxy_per_case: proxyScores, last_read_proxy_mean: Number((proxyScores.reduce((a, b) => a + b, 0) / proxyScores.length).toFixed(6)) },
   live_backtest: { horizon_days: Number((liveCase.horizon_minutes / 1440).toFixed(4)), ...liveMetrics, fallback_sigma_sweep: fallbackCalibration },
   synthetic: { history_reads: synthetic.testCase.history.length, population: [synthetic.playersStart, synthetic.playersEnd], ...syntheticMetrics, spread_sweep: syntheticSpreadSweep, direction_pass: directionChecks.filter(Boolean).length },
+  selected_time_model: selected,
   runtime_ms: runtime,
 };
 console.log(JSON.stringify(report, null, 2));
 
-const selected = liveMetrics.logtime.loss + syntheticMetrics.logtime.loss <= liveMetrics.linear.loss + syntheticMetrics.linear.loss ? 'logtime' : 'linear';
 if (report.practice.mean > 0.01) throw new Error('practice grade exceeds 0.01');
 if (liveMetrics[selected].loss >= liveMetrics.persistence.loss) throw new Error('live model did not beat persistence');
 if (syntheticMetrics[selected].loss >= syntheticMetrics.persistence.loss || report.synthetic.direction_pass !== 55) throw new Error('synthetic gate failed');

@@ -119,7 +119,7 @@ function forecast(c) {
   }
   const rows = c.trophies.map((t, i) => {
     const lastLogit = logit(last.rates[i]);
-    let delta = 0.8 * logDeltas[i] + 0.2 * (tierDeltas.get(t.tier) || 0);
+    let delta = 0.72 * logDeltas[i] + 0.18 * (tierDeltas.get(t.tier) || 0);
     const growthRatio = Math.max(0, last.players_tracked / c.history[0].players_tracked - 1);
     const rarity = clamp((-lastLogit - 1) / 3, 0, 1);
     // Fast tracker growth mostly adds early players, so damp rare-trophy gains.
@@ -132,7 +132,7 @@ function forecast(c) {
     const medianLogit = lastLogit + delta + (flatFallback && process.env.GTA6_DISABLE_FLAT_PRIOR !== '1' ? -0.7 : 0);
     const residualDown = selected[i].residualDown;
     const residualUp = selected[i].residualUp;
-    const fallbackScale = Number(process.env.GTA6_FALLBACK_SIGMA || 3.5);
+    const fallbackScale = Number(process.env.GTA6_FALLBACK_SIGMA || 4.0);
     const generalScale = Number(process.env.GTA6_GENERAL_SPREAD || 1.5);
     const lowerSigma = flatFallback ? fallbackScale * 1.35 :
       generalScale * Math.sqrt(0.30 ** 2 + (0.18 + residualDown) ** 2 * days) * (days > 1.5 ? 1.35 : 1.05);
